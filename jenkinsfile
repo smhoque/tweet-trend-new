@@ -1,0 +1,15 @@
+pipeline {
+    agent{
+        node {
+            label "maven"
+        }
+    }
+
+    stages {
+        stage('clone') {
+            steps {
+                git branch: 'main', credentialsId: 'maven-slave', url: 'https://github.com/smhoque/tweet-trend-new.git'
+            }
+        }
+    }
+}
