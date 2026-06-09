@@ -7,7 +7,9 @@ pipeline {
 
     environment {
         PATH = "/opt/apache-maven-3.9.16/bin:$PATH"
-        REGISTRY = "https://trialu7cpje.jfrog.io/"
+        REGISTRY = "https://trialu7cpje.jfrog.io"
+        IMAGE_NAME = "valaxy-docker-local/ttrend"
+        VERSION = "2.1.2"
     }
 
     stages {
@@ -85,6 +87,34 @@ pipeline {
                     server.publishBuildInfo(buildInfo)
 
                     echo "----------- JAR PUBLISH COMPLETED ----------"
+                }
+            }
+        }
+
+        stage("Docker Build") {
+            steps {
+                script {
+                    echo "----------- DOCKER BUILD STARTED ----------"
+
+                    def imageName = "${env.REGISTRY}/valaxy-docker-local/ttrend"
+
+                    app = docker.build("${imageName}:${env.VERSION}")
+
+                    echo "----------- DOCKER BUILD COMPLETED ----------"
+                }
+            }
+        }
+
+        stage("Docker Publish") {
+            steps {
+                script {
+                    echo "----------- DOCKER PUBLISH STARTED ----------"
+
+                    docker.withRegistry("${env.REGISTRY}", "artifactory_token") {
+                        app.push("${env.VERSION}")
+                    }
+
+                    echo "----------- DOCKER PUBLISH COMPLETED ----------"
                 }
             }
         }
