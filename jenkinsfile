@@ -8,7 +8,7 @@ pipeline {
     environment {
         PATH = "/opt/apache-maven-3.9.16/bin:$PATH"
         REGISTRY = "https://trialu7cpje.jfrog.io"
-        IMAGE_NAME = "valaxy-docker-local/ttrend"
+        IMAGE_NAME = "valaxy-docker-local"
         VERSION = "2.1.2"
     }
 
