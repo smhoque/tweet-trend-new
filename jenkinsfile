@@ -6,27 +6,35 @@ pipeline {
     }
 
     environment {
-        PATH = "/opt/apache-maven-3.9.16/bin:$PATH"
-        REGISTRY = "https://trialu7cpje.jfrog.io"
-        IMAGE_NAME = "valaxy-docker-local"
+        MAVEN_HOME = "/opt/apache-maven-3.9.16"
+        PATH = "${env.MAVEN_HOME}/bin:$PATH"
+
+        REGISTRY = "trialu7cpje.jfrog.io"
+        IMAGE_NAME = "${REGISTRY}/valaxy-docker-local/ttrend"
         VERSION = "2.1.2"
     }
 
     stages {
 
+        stage("Checkout") {
+            steps {
+                checkout scm
+            }
+        }
+
         stage("Build") {
             steps {
                 echo "----------- BUILD STARTED ----------"
-                sh 'mvn clean deploy -Dmaven.test.skip=true'
+                sh 'mvn clean package -Dmaven.test.skip=true'
                 echo "----------- BUILD COMPLETED ----------"
             }
         }
 
         stage("Test") {
             steps {
-                echo "----------- UNIT TEST STARTED ----------"
+                echo "----------- TEST STARTED ----------"
                 sh 'mvn surefire-report:report'
-                echo "----------- UNIT TEST COMPLETED ----------"
+                echo "----------- TEST COMPLETED ----------"
             }
         }
 
@@ -48,7 +56,7 @@ pipeline {
                     timeout(time: 1, unit: 'HOURS') {
                         def qg = waitForQualityGate()
                         if (qg.status != 'OK') {
-                            error "Pipeline aborted due to Quality Gate failure: ${qg.status}"
+                            error "Pipeline failed due to Quality Gate: ${qg.status}"
                         }
                     }
                 }
@@ -56,37 +64,32 @@ pipeline {
         }
         */
 
-        stage("Jar Publish to Artifactory") {
+        stage("Artifactory Upload") {
             steps {
                 script {
-                    echo "----------- JAR PUBLISH STARTED ----------"
+                    echo "----------- ARTIFACT UPLOAD STARTED ----------"
 
                     def server = Artifactory.newServer(
-                        url: "${env.REGISTRY}/artifactory",
+                        url: "https://${env.REGISTRY}/artifactory",
                         credentialsId: "artifactory_token"
                     )
-
-                    def properties = "buildid=${env.BUILD_ID},commitid=${env.GIT_COMMIT}"
 
                     def uploadSpec = """
                     {
                         "files": [
                             {
-                                "pattern": "jarstaging/(*)",
-                                "target": "maven-libs-release-local/{1}",
-                                "flat": false,
-                                "props": "${properties}",
-                                "exclusions": ["*.sha1", "*.md5"]
+                                "pattern": "target/*.jar",
+                                "target": "maven-libs-release-local/",
+                                "flat": true
                             }
                         ]
                     }
                     """
 
                     def buildInfo = server.upload(uploadSpec)
-                    buildInfo.env.collect()
                     server.publishBuildInfo(buildInfo)
 
-                    echo "----------- JAR PUBLISH COMPLETED ----------"
+                    echo "----------- ARTIFACT UPLOAD COMPLETED ----------"
                 }
             }
         }
@@ -96,27 +99,34 @@ pipeline {
                 script {
                     echo "----------- DOCKER BUILD STARTED ----------"
 
-                    def imageName = "${env.REGISTRY}/valaxy-docker-local/ttrend"
-
-                    app = docker.build("${imageName}:${env.VERSION}")
+                    app = docker.build("${env.IMAGE_NAME}:${env.VERSION}")
 
                     echo "----------- DOCKER BUILD COMPLETED ----------"
                 }
             }
         }
 
-        stage("Docker Publish") {
+        stage("Docker Push") {
             steps {
                 script {
-                    echo "----------- DOCKER PUBLISH STARTED ----------"
+                    echo "----------- DOCKER PUSH STARTED ----------"
 
-                    docker.withRegistry("${env.REGISTRY}", "artifactory_token") {
+                    docker.withRegistry("https://${env.REGISTRY}", "artifactory_token") {
                         app.push("${env.VERSION}")
                     }
 
-                    echo "----------- DOCKER PUBLISH COMPLETED ----------"
+                    echo "----------- DOCKER PUSH COMPLETED ----------"
                 }
             }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline SUCCESS 🎉"
+        }
+        failure {
+            echo "Pipeline FAILED ❌"
         }
     }
 }
