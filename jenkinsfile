@@ -1,0 +1,16 @@
+pipeline {
+    agent{
+        node {
+            label "maven"
+        }
+    }
+
+    stages {
+        stage('clone-repository') {
+            steps {
+                git branch: 'main', url: 'https://github.com/smhoque/tweet-trend-new.git'
+            }
+        }
+    }
+}
+
