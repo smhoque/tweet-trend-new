@@ -8,10 +8,16 @@ pipeline {
 
     environment {
         PATH = "/opt/apache-maven-3.9.16/bin:$PATH"
+        REGISTRY = "https://trialr0z87d.jfrog.io/"
     }
 
     stages {
 
+        /*
+         * ---------------------------------------------------------
+         * BUILD
+         * ---------------------------------------------------------
+         */
         stage("Build") {
             steps {
                 echo "----------- Build started ----------"
@@ -22,6 +28,11 @@ pipeline {
             }
         }
 
+        /*
+         * ---------------------------------------------------------
+         * UNIT TEST
+         * ---------------------------------------------------------
+         */
         stage("Test") {
             steps {
                 echo "----------- Unit test started ----------"
@@ -32,23 +43,42 @@ pipeline {
             }
         }
 
+        /*
+         * ---------------------------------------------------------
+         * SONARQUBE ANALYSIS
+         * ---------------------------------------------------------
+         */
         stage("SonarQube Analysis") {
             environment {
                 scannerHome = tool "valaxy-sonar-scanner"
             }
 
             steps {
+                echo "----------- SonarQube analysis started ----------"
+
                 withSonarQubeEnv("valaxy-sonarqube-server") {
                     sh "${scannerHome}/bin/sonar-scanner"
                 }
+
+                echo "----------- SonarQube analysis completed ----------"
             }
         }
 
+        /*
+         * ---------------------------------------------------------
+         * QUALITY GATE
+         * ---------------------------------------------------------
+         *
+         * Uncomment this stage if you want Jenkins to wait for
+         * SonarQube and fail the pipeline when the quality gate fails.
+         *
+         */
         /*
         stage("Quality Gate") {
             steps {
                 script {
                     timeout(time: 1, unit: "HOURS") {
+
                         def qg = waitForQualityGate()
 
                         if (qg.status != "OK") {
@@ -59,5 +89,49 @@ pipeline {
             }
         }
         */
+
+        /*
+         * ---------------------------------------------------------
+         * JAR PUBLISH TO ARTIFACTORY
+         * ---------------------------------------------------------
+         */
+        stage("Jar Publish") {
+            steps {
+                script {
+
+                    echo "<--------------- Jar Publish Started --------------->"
+
+                    def server = Artifactory.newServer(
+                        url: "${env.REGISTRY}/artifactory",
+                        credentialsId: "artifactory_token"
+                    )
+
+                    def properties = "buildid=${env.BUILD_ID},commitid=${GIT_COMMIT}"
+
+                    def uploadSpec = """{
+                        "files": [
+                            {
+                                "pattern": "jarstaging/(*)",
+                                "target": "01-libs-release-local/{1}",
+                                "flat": "false",
+                                "props": "${properties}",
+                                "exclusions": [
+                                    "*.sha1",
+                                    "*.md5"
+                                ]
+                            }
+                        ]
+                    }"""
+
+                    def buildInfo = server.upload(uploadSpec)
+
+                    buildInfo.env.collect()
+
+                    server.publishBuildInfo(buildInfo)
+
+                    echo "<--------------- Jar Publish Ended --------------->"
+                }
+            }
+        }
     }
 }
