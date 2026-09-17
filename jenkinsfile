@@ -1,87 +1,127 @@
 pipeline {
 
+    /*
+     * ============================================================
+     * AGENT
+     * ============================================================
+     */
     agent {
         node {
             label "maven"
         }
     }
 
+
+    /*
+     * ============================================================
+     * ENVIRONMENT
+     * ============================================================
+     */
     environment {
+
+        // Maven
         PATH = "/opt/apache-maven-3.9.16/bin:$PATH"
-        REGISTRY = "https://trialr0z87d.jfrog.io/"
+
+        // JFrog Artifactory
+        REGISTRY = "https://trialr0z87d.jfrog.io"
+
+        // Docker image
+        IMAGE_NAME = "trialr0z87d.jfrog.io/lib-docker-local/ttrend"
+        IMAGE_VERSION = "2.1.2"
     }
 
+
+    /*
+     * ============================================================
+     * STAGES
+     * ============================================================
+     */
     stages {
 
+
         /*
-         * ---------------------------------------------------------
+         * --------------------------------------------------------
          * BUILD
-         * ---------------------------------------------------------
+         * --------------------------------------------------------
          */
         stage("Build") {
+
             steps {
-                echo "----------- Build started ----------"
+
+                echo "----------- Build Started ----------"
 
                 sh "mvn clean deploy -Dmaven.test.skip=true"
 
-                echo "----------- Build completed ----------"
+                echo "----------- Build Completed ----------"
             }
         }
 
+
         /*
-         * ---------------------------------------------------------
+         * --------------------------------------------------------
          * UNIT TEST
-         * ---------------------------------------------------------
+         * --------------------------------------------------------
          */
         stage("Test") {
+
             steps {
-                echo "----------- Unit test started ----------"
+
+                echo "----------- Unit Test Started ----------"
 
                 sh "mvn surefire-report:report"
 
-                echo "----------- Unit test completed ----------"
+                echo "----------- Unit Test Completed ----------"
             }
         }
 
+
         /*
-         * ---------------------------------------------------------
+         * --------------------------------------------------------
          * SONARQUBE ANALYSIS
-         * ---------------------------------------------------------
+         * --------------------------------------------------------
          */
         stage("SonarQube Analysis") {
+
             environment {
                 scannerHome = tool "valaxy-sonar-scanner"
             }
 
             steps {
-                echo "----------- SonarQube analysis started ----------"
+
+                echo "----------- SonarQube Analysis Started ----------"
 
                 withSonarQubeEnv("valaxy-sonarqube-server") {
+
                     sh "${scannerHome}/bin/sonar-scanner"
                 }
 
-                echo "----------- SonarQube analysis completed ----------"
+                echo "----------- SonarQube Analysis Completed ----------"
             }
         }
 
+
         /*
-         * ---------------------------------------------------------
+         * --------------------------------------------------------
          * QUALITY GATE
-         * ---------------------------------------------------------
+         * --------------------------------------------------------
          *
          * Uncomment this stage if you want Jenkins to wait for
-         * SonarQube and fail the pipeline when the quality gate fails.
+         * SonarQube and stop the pipeline if the quality gate fails.
          *
          */
         /*
         stage("Quality Gate") {
+
             steps {
+
                 script {
+
                     timeout(time: 1, unit: "HOURS") {
 
                         def qg = waitForQualityGate()
 
                         if (qg.status != "OK") {
+
                             error "Pipeline aborted due to quality gate failure: ${qg.status}"
                         }
                     }
@@ -90,13 +130,16 @@ pipeline {
         }
         */
 
+
         /*
-         * ---------------------------------------------------------
-         * JAR PUBLISH TO ARTIFACTORY
-         * ---------------------------------------------------------
+         * --------------------------------------------------------
+         * JAR PUBLISH
+         * --------------------------------------------------------
          */
         stage("Jar Publish") {
+
             steps {
+
                 script {
 
                     echo "<--------------- Jar Publish Started --------------->"
@@ -106,7 +149,8 @@ pipeline {
                         credentialsId: "artifactory_token"
                     )
 
-                    def properties = "buildid=${env.BUILD_ID},commitid=${GIT_COMMIT}"
+                    def properties =
+                        "buildid=${env.BUILD_ID},commitid=${GIT_COMMIT}"
 
                     def uploadSpec = """{
                         "files": [
@@ -129,7 +173,57 @@ pipeline {
 
                     server.publishBuildInfo(buildInfo)
 
-                    echo "<--------------- Jar Publish Ended --------------->"
+                    echo "<--------------- Jar Publish Completed --------------->"
+                }
+            }
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * DOCKER BUILD
+         * --------------------------------------------------------
+         */
+        stage("Docker Build") {
+
+            steps {
+
+                script {
+
+                    echo "<--------------- Docker Build Started --------------->"
+
+                    app = docker.build(
+                        "${env.IMAGE_NAME}:${env.IMAGE_VERSION}"
+                    )
+
+                    echo "<--------------- Docker Build Completed --------------->"
+                }
+            }
+        }
+
+
+        /*
+         * --------------------------------------------------------
+         * DOCKER PUBLISH
+         * --------------------------------------------------------
+         */
+        stage("Docker Publish") {
+
+            steps {
+
+                script {
+
+                    echo "<--------------- Docker Publish Started --------------->"
+
+                    docker.withRegistry(
+                        env.REGISTRY,
+                        "artifactory_token"
+                    ) {
+
+                        app.push()
+                    }
+
+                    echo "<--------------- Docker Publish Completed --------------->"
                 }
             }
         }
